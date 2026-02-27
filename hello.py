@@ -536,3 +536,336 @@ class CustomTagFilter:
         self.in_tag = False
         self.output_text = ""
         return self
+
+    # 新增的十个函数
+    
+    def extract_nested_think_content(self, text: str) -> list:
+        """
+        提取嵌套的think标签内容
+        
+        Args:
+            text: 输入文本
+            
+        Returns:
+            list: 嵌套think内容的层级列表
+        """
+        result = []
+        stack = []
+        current_level = 0
+        
+        # 使用正则表达式找到所有think标签
+        pattern = re.compile(r'(</?think>)', re.IGNORECASE)
+        segments = pattern.split(text)
+        
+        current_content = ""
+        in_think = False
+        
+        for segment in segments:
+            if segment.lower() == '<think>':
+                if in_think:
+                    # 嵌套开始
+                    stack.append((current_level, current_content))
+                    current_level += 1
+                else:
+                    in_think = True
+                current_content = ""
+            elif segment.lower() == '</think>':
+                if in_think:
+                    if stack:
+                        # 嵌套结束
+                        level, parent_content = stack.pop()
+                        result.append({
+                            "level": current_level,
+                            "content": current_content
+                        })
+                        current_content = parent_content
+                        current_level = level
+                    else:
+                        # 最外层结束
+                        result.append({
+                            "level": current_level,
+                            "content": current_content
+                        })
+                        in_think = False
+                        current_content = ""
+                current_content = ""
+            else:
+                if in_think:
+                    current_content += segment
+        
+        return result
+    
+    def replace_think_content(self, text: str, replacement: str = "[思考内容已过滤]") -> str:
+        """
+        替换think标签内容为指定文本
+        
+        Args:
+            text: 输入文本
+            replacement: 替换文本
+            
+        Returns:
+            str: 替换后的文本
+        """
+        think_pattern = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
+        return think_pattern.sub(replacement, text)
+    
+    def get_think_context(self, text: str, context_size: int = 50) -> list:
+        """
+        获取think标签周围的上下文
+        
+        Args:
+            text: 输入文本
+            context_size: 上下文大小（字符数）
+            
+        Returns:
+            list: 包含think内容及其上下文的字典列表
+        """
+        result = []
+        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL | re.IGNORECASE)
+        
+        for match in think_pattern.finditer(text):
+            start, end = match.span()
+            think_content = match.group(1)
+            
+            # 获取上下文
+            context_start = max(0, start - context_size)
+            context_end = min(len(text), end + context_size)
+            
+            result.append({
+                "think_content": think_content,
+                "before_context": text[context_start:start],
+                "after_context": text[end:context_end],
+                "full_context": text[context_start:context_end],
+                "position": {
+                    "start": start,
+                    "end": end
+                }
+            })
+        
+        return result
+    
+    def analyze_think_patterns(self, text: str) -> dict:
+        """
+        分析think标签的使用模式
+        
+        Args:
+            text: 输入文本
+            
+        Returns:
+            dict: 分析结果
+        """
+        # 计算think标签数量
+        open_tags = len(re.findall(r'<think>', text, re.IGNORECASE))
+        close_tags = len(re.findall(r'</think>', text, re.IGNORECASE))
+        
+        # 提取所有think内容
+        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL | re.IGNORECASE)
+        think_contents = think_pattern.findall(text)
+        
+        # 计算统计信息
+        total_chars = sum(len(content) for content in think_contents)
+        avg_length = total_chars / len(think_contents) if think_contents else 0
+        
+        # 分析内容特征
+        has_code = any('```' in content for content in think_contents)
+        has_questions = any('?' in content for content in think_contents)
+        has_lists = any(('* ' in content or '- ' in content or '1.' in content) for content in think_contents)
+        
+        return {
+            "tag_count": {
+                "open": open_tags,
+                "close": close_tags,
+                "valid_pairs": min(open_tags, close_tags)
+            },
+            "content_stats": {
+                "total_think_blocks": len(think_contents),
+                "total_characters": total_chars,
+                "average_length": avg_length,
+                "max_length": max((len(content) for content in think_contents), default=0),
+                "min_length": min((len(content) for content in think_contents), default=0)
+            },
+            "content_features": {
+                "contains_code": has_code,
+                "contains_questions": has_questions,
+                "contains_lists": has_lists
+            }
+        }
+    
+    def merge_adjacent_think_tags(self, text: str) -> str:
+        """
+        合并相邻的think标签
+        
+        Args:
+            text: 输入文本
+            
+        Returns:
+            str: 合并后的文本
+        """
+        # 将连续的think标签合并为一个
+        pattern = re.compile(r'</think>\s*<think>', re.IGNORECASE | re.DOTALL)
+        return pattern.sub('', text)
+    
+    def extract_think_summary(self, text: str, max_sentences: int = 3) -> str:
+        """
+        提取think内容的摘要
+        
+        Args:
+            text: 输入文本
+            max_sentences: 最大句子数
+            
+        Returns:
+            str: think内容摘要
+        """
+        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL | re.IGNORECASE)
+        think_contents = think_pattern.findall(text)
+        
+        if not think_contents:
+            return ""
+        
+        # 合并所有think内容
+        all_think_content = " ".join(think_contents)
+        
+        # 简单的句子分割
+        sentences = re.split(r'[.!?]+', all_think_content)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        # 返回前N个句子
+        summary_sentences = sentences[:max_sentences]
+        return ". ".join(summary_sentences) + ("." if summary_sentences else "")
+    
+    def create_think_toc(self, text: str) -> str:
+        """
+        为think内容创建目录
+        
+        Args:
+            text: 输入文本
+            
+        Returns:
+            str: think内容目录
+        """
+        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL | re.IGNORECASE)
+        think_contents = think_pattern.findall(text)
+        
+        if not think_contents:
+            return "没有找到think标签内容"
+        
+        toc_lines = ["Think内容目录:"]
+        
+        for i, content in enumerate(think_contents, 1):
+            # 提取第一行作为标题
+            first_line = content.strip().split('\n')[0][:50]
+            if len(first_line) < len(content.strip().split('\n')[0]):
+                first_line += "..."
+            
+            toc_lines.append(f"{i}. {first_line}")
+        
+        return "\n".join(toc_lines)
+    
+    def filter_think_by_keywords(self, text: str, keywords: list, include: bool = True) -> str:
+        """
+        根据关键词过滤think内容
+        
+        Args:
+            text: 输入文本
+            keywords: 关键词列表
+            include: True表示保留包含关键词的think，False表示排除包含关键词的think
+            
+        Returns:
+            str: 过滤后的文本
+        """
+        think_pattern = re.compile(r'(<think>.*?</think>)', re.DOTALL | re.IGNORECASE)
+        
+        def replace_func(match):
+            think_content = match.group(1)
+            
+            # 检查是否包含关键词
+            has_keyword = any(keyword.lower() in think_content.lower() for keyword in keywords)
+            
+            # 根据include参数决定是否保留
+            if include:
+                return think_content if has_keyword else ""
+            else:
+                return "" if has_keyword else think_content
+        
+        return think_pattern.sub(replace_func, text)
+    
+    def convert_think_to_comments(self, text: str, comment_style: str = "python") -> str:
+        """
+        将think标签转换为注释
+        
+        Args:
+            text: 输入文本
+            comment_style: 注释风格 ("python", "javascript", "html", "custom")
+            
+        Returns:
+            str: 转换后的文本
+        """
+        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL | re.IGNORECASE)
+        
+        # 根据注释风格确定注释符号
+        comment_symbols = {
+            "python": "# ",
+            "javascript": "// ",
+            "html": "<!-- ",
+            "custom": "[COMMENT] "
+        }
+        
+        comment_prefix = comment_symbols.get(comment_style, "# ")
+        comment_suffix = "" if comment_style != "html" else " -->"
+        
+        def replace_func(match):
+            content = match.group(1).strip()
+            lines = content.split('\n')
+            commented_lines = [f"{comment_prefix}{line}{comment_suffix}" for line in lines]
+            return "\n".join(commented_lines)
+        
+        return think_pattern.sub(replace_func, text)
+    
+    def extract_think_with_metadata(self, text: str) -> list:
+        """
+        提取think内容及其元数据
+        
+        Args:
+            text: 输入文本
+            
+        Returns:
+            list: 包含think内容和元数据的字典列表
+        """
+        result = []
+        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL | re.IGNORECASE)
+        
+        for i, match in enumerate(think_pattern.finditer(text)):
+            start, end = match.span()
+            content = match.group(1)
+            
+            # 分析内容特征
+            sentences = len(re.split(r'[.!?]+', content))
+            words = len(re.findall(r'\b\w+\b', content))
+            chars = len(content)
+            
+            # 检测内容类型
+            has_code = '```' in content
+            has_questions = '?' in content
+            has_lists = any(marker in content for marker in ['* ', '- ', '1.', '2.'])
+            
+            result.append({
+                "id": i + 1,
+                "content": content,
+                "position": {
+                    "start": start,
+                    "end": end,
+                    "length": end - start
+                },
+                "statistics": {
+                    "sentences": sentences,
+                    "words": words,
+                    "characters": chars
+                },
+                "features": {
+                    "has_code": has_code,
+                    "has_questions": has_questions,
+                    "has_lists": has_lists
+                }
+            })
+        
+        return result
